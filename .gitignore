@@ -43,6 +43,7 @@ Sonde_Data.csv
 
 # Python script with CBEP access token
 noaaweatherdataGUI.py
+.spyproject/
 
 # Folders used to hide content from GIT
 **/drafts/
