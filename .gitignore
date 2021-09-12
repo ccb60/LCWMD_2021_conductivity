@@ -37,3 +37,14 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
+
+# Large Data File
+Sonde_Data.csv
+
+# Python script with CBEP access token
+noaaweatherdataGUI.py
+
+# Folders used to hide content from GIT
+**/drafts/
+**/omitfromgit/
+
