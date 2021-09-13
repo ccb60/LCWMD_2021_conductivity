@@ -1,5 +1,5 @@
 ---
-title: "Supplementary Analysis of Daily Conductivity Data"
+title: "Supplementary Analysis of High Frequency Conductivity Data"
 author: "Curtis C. Bohlen, Casco Bay Estuary Partnership"
 date: "9/12/2021"
 output: word_document
@@ -72,8 +72,7 @@ dir.create(file.path(getwd(), 'figures'), showWarnings = FALSE)
 ```
 
 # Data Preparation
-We omit most data preparation code, as of littler interest to readers, and
-simply summarize the steps and decisions made.
+We omit most data preparation code, as of littler interest to readers.
 
 ## Load Weather Data
 Weather data was downloaded from a NOAA "Climate Data Online" API using a 
@@ -82,6 +81,7 @@ snowfall, and (minimum and maximum) air temperatures.
 ```{r load_weather_data, echo = FALSE}
 fn <- "Portland_Jetport_2009-2019_long.csv"
 weather_data <- read_csv(fn, 
+                         
                          col_types = cols(
                            date = col_character(),
                            datatype = col_character(),
@@ -100,112 +100,71 @@ weather_data <- read_csv(fn,
   mutate(pPRCP = dplyr::lag(PRCP),
          pSNOW = dplyr::lag(SNOW)) %>%
   relocate(pSNOW, .after = SNOW) %>%
-  relocate(pPRCP, .after = PRCP) 
+  relocate(pPRCP, .after = PRCP) %>%
 
-```
-
-## Load Daily Data
-We developed daily summaries of the LCWMD datafor our "State of Casco Bay data 
-analysis.  Here we loaded only the daily medians for conductivity, water depth, 
-and (estimated) chloride concentrations.in daily summaries and retain only the 
-median values.
-```{r load_data, echo = FALSE}
-fn <- "Daily_Data.csv"
-
-daily_data <- read_csv(fn, progress=FALSE, 
-                          col_types = cols(
-                            pH_Mean = col_number(),
-                            pH_Median = col_number(),
-                            pH_Min = col_number(),
-                            pH_Max = col_number(),
-                            pH_SD = col_number(),
-                            pH_Iqr = col_number() )) %>%
-  select(-ends_with('Min'), -ends_with('Max'), -ends_with('Mean'),
-         -ends_with('Iqr'), -ends_with('SD'), -ends_with('_n')) %>%
-  mutate(Site = factor(Site)) %>%
-  arrange(Site, sdate) %>%
-  
+  mutate(Month = as.numeric(format(sdate, format = '%m'))) %>%
   mutate(Month = factor(Month, levels = 1:12, labels = month.abb)) %>%
+  mutate(Year = as.numeric(format(sdate, format = '%Y')))  %>%
   mutate(Yearf = factor(Year)) %>%
   mutate(DOY = as.numeric(format(sdate, format = '%j'))) %>%
   relocate(Year, Yearf, Month, DOY, .after = sdate)
 ```
 
-# Combine Daily and Weather Data
-We merged the two source datasets by date.
-```{r combine_data, echo = FALSE}
-daily_data <- daily_data %>%
-  left_join(weather_data, by = 'sdate') %>%
-  select(-contains('attr')) %>%
-  select(-Precip, -PPrecip, -MaxT)
-#head(daily_data)
+## Load High Frequency Data
+We developed daily summaries of the LCWMD datafor our "State of Casco Bay data 
+analysis.  Here we loaded only the daily medians for conductivity, water depth, 
+and (estimated) chloride concentrations.in daily summaries and retain only the 
+median values.
+```{r load_data, echo = FALSE}
+fn <- "Sonde_Data.csv"
+
+sonde_data <- read_csv(fn, progress=FALSE, 
+                       col_types = cols(
+                         DT = col_datetime(),
+                         Chl	= col_number(),
+                         D		= col_number(),
+                         DO	= col_number(),
+                         PctSat		= col_number(),
+                         pH	= col_number(),
+                         Press	= col_number(),
+                         SpCond	= col_number(),
+                         T	= col_number(),
+                         Precip	= col_number(),	
+                         Site = col_character() )) %>%
+  mutate(Site = factor(Site)) %>%
+  select(-X1) %>%
+
+  rename(sdatetime = DT,
+         Depth = D,
+         Temp = T) %>%
+  relocate(Site, sdatetime) %>%
+  arrange(Site, sdatetime) %>%
+  
+  mutate(Month = as.numeric(format(sdatetime, format = '%m'))) %>%
+  mutate(Month = factor(Month, levels = 1:12, labels = month.abb)) %>%
+  mutate(Year = as.numeric(format(sdatetime, format = '%Y')))  %>%
+  mutate(Yearf = factor(Year)) %>%
+  mutate(DOY = as.numeric(format(sdatetime, format = '%j'))) %>%
+  relocate(Year, Yearf, Month, DOY, .after = sdatetime)
 ```
 
-## Data Corrections
-During our "State of Casco BAy data review, we noted several inconsistencies in 
-the LCWMD data.  her we walk through the corrections we chose to maketo the data as originally provided to us by LCWMD.
-
-(Most of these corrections have no effect on our analyses, since they 
-relate to data from the summer months; we include them here for completeness.)  
-
-## Anomolous Depth Values
-Several depth observations in the record are impossible or highly unlikely. In
-particular, several observations show daily median water depths over 15 meters.
-And those observations were recorded in May or June, at site S05, with no
-associated record of significant precipitation, and no elevated depths at other
-sites on the stream.
-
-A few more observations show daily median depths over 4 meters, which also
-looks unlikely in a stream of this size.  All these events also occurred in 
-May or June of 2015 at site S05. Some sort of malfunction of the pressure 
-transducer appears likely.
-
-We can trace these observations back to the raw QA/QC'd pressure and sonde data 
-submitted to LCWMD by GZA, so they are not an artifact of data preparation.
-
-We removed extreme values (anything over 4 meters).  The other daily medians 
-in May and June of 2015 appear reasonable, and we leave them in place, although
-given possible instability of the pressure sensors, it could make sense to 
-remove them all.
-
-```{r fix_depths, include = FALSE}
-daily_data <- daily_data %>%
-  mutate(D_Median = if_else(D_Median > 4, NA_real_, D_Median))
-```
-
-### Single S06B Chloride Observation from 2017
-The data includes just a single chloride observation from site S06B from any
-year other than 2013.  While we do not know if the data point is legitimate or
-not, it has very high leverage in statistical models, and we suspect a
-transcription error of some sort. We removed related Conductivity and Chloride
-values from the data. Since we chose not to look at Site S06B because of a lack
-of winter data, this does not affect our analyses.
-
-
-```{r fix_conduct, include = FALSE}
-daily_data <- daily_data %>%
-  mutate(Chl_Median = if_else(Site == 'S06B' & Year > 2014,
-                              NA_real_, Chl_Median),
-         SpCond_Median = if_else(Site == 'S06B' & Year > 2014,
-                              NA_real_, SpCond_Median))
-```
-
-### Site S03, End of 2016
+# Data Correction
+## Site S03, End of 2016
 We noted some extreme dissolved oxygen data at the end of 2016.  Values were
 both extreme and highly variable.  We concluded that the data was suspect, 
 perhaps because of damage to, burying of the sensors. We decided to remove 
 chloride and oxygen observations after October 15th that year.
 
 ```{r fix_s03, include = FALSE}
-daily_data <- daily_data %>% 
-  mutate(Chl_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
-                              NA_real_, Chl_Median),
-         SpCond_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
-                              NA_real_, SpCond_Median),
-         DO_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
-                              NA_real_, DO_Median),
-         PctSat_Median = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
-                              NA_real_, PctSat_Median))
+sonde_data <- sonde_data %>% 
+  mutate(Chl = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, Chl),
+         SpCond = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, SpCond),
+         DO = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, DO),
+         PctSat = if_else(Year == 2016 & Site == 'S03' & DOY > 288,
+                              NA_real_, PctSat))
 ```
 
 # Data Review
@@ -215,16 +174,16 @@ from only one year, February data from only three, and December data from
 four.
 
 ```{r month_by_year_crosstab}
-xtabs(~ Yearf + Month, data = daily_data)
+xtabs(~ Yearf + Month, data = sonde_data)
 ```
 
-We restrict our attention to February, and March.  (Preliminary review
+We restrict our attention to February, and March. (Preliminary review
 showed that there are few high conductivity events in the December data.  We
 have too little January data to make much difference.).
 ```{r limit_to_winter_data}
-winter_data <- daily_data %>%
+winter_data <- sonde_data %>%
   filter(Month %in% month.abb[c(2,3)]) %>%   
-  filter(! is.na(SpCond_Median))
+  filter(! is.na(SpCond))
 ```
 
 ## Uneven Winter Sampling By Site
@@ -248,8 +207,8 @@ winter_data <- winter_data %>%
 # Exploratory Graphic
 We take a quick look at all the winter data
 ```{r all_plots_graphic, echo = FALSE}
-plt <- ggplot(winter_data, aes(DOY, SpCond_Median, color = Yearf)) +
-  geom_line(alpha = 0.5) +
+plt <- ggplot(winter_data, aes(DOY, SpCond, color = Yearf)) +
+  geom_point(alpha = 0.5) +
   scale_color_viridis_d() +
   facet_wrap(~Site) +
   theme(legend.position = "bottom") +
@@ -268,20 +227,25 @@ in 2013, but only at Site S01.
 ```{r make_subsets, include = FALSE}
 s07_data <- winter_data %>%
   filter(Site == 'S07') %>%
-  arrange(sdate)
+  arrange(sdatetime)
 
 s05_data<- winter_data %>%
   filter(Site == 'S05') %>%
-  arrange(sdate)
+  arrange(sdatetime)
 
 s03_data<- winter_data %>%
   filter(Site == 'S03') %>%
-  arrange(sdate)
+  arrange(sdatetime)
 
 s01_data<- winter_data %>%
   filter(Site == 'S01') %>%
-  arrange(sdate)
+  arrange(sdatetime)
 ```
+
+```{r}
+rm(sonde_data)
+```
+
 
 # Event-based Graphics
 We designed a graphic that shows specific conductance at the top of a 
@@ -289,32 +253,59 @@ multi-panel layout, with likely environmental drivers shown below. We wrote a
 function to produce the graphic based on selected data, so we could focus
 on what is going on at specific sites around specific high conductivity events.
 ```{r make_graph_fxn, include = FALSE}
-time_plot <- function(.data, .dt, .sc, .tmax, .tmin, .precip, .snow, .dpth,
+time_plot_2 <- function(.data, .dt, .sc,  .dpth,
+                        .data2, .dy, .tmax, .tmin, .precip, .snow,
                       .title = '') {
   stopifnot(is.data.frame(.data) | is.null(.data))
+  stopifnot(is.data.frame(.data2) | is.null(.data2))
+  
   stopifnot(length(.title) == 1)
-  #browser()
+
   .dt <- enquo(.dt)
   .sc <- enquo(.sc)
+  .dpth <- enquo(.dpth)
+  
+  .dy <- enquo(.dy)
   .tmax <- enquo(.tmax)
   .tmin <- enquo(.tmin)
   .precip <- enquo(.precip)
   .snow <- enquo(.snow)
-  .dpth <- enquo(.dpth)
   
   dt <- eval_tidy(.dt, .data)
   sc <- eval_tidy(.sc, .data)
-  tmax <- eval_tidy(.tmax, .data)
-  tmin <- eval_tidy(.tmin, .data)
-  precip <- eval_tidy(.precip, .data)
-  snow <- eval_tidy(.snow, .data)
   dpth <- eval_tidy(.dpth, .data)
+  
+  dy <- eval_tidy(.dy, .data2)
+  tmax <- eval_tidy(.tmax, .data2)
+  tmin <- eval_tidy(.tmin, .data2)
+  precip <- eval_tidy(.precip, .data2)
+  snow <- eval_tidy(.snow, .data2)
+  
+  
+  first_DT <- min(dt)
+  first_day <- as.numeric(format(first_DT, '%d'))
+  first_month <- as.numeric(format(first_DT, '%m'))
+  first_year <- as.numeric(format(first_DT, '%Y'))
+  start_first <- as.POSIXct(paste0(first_year, '-',
+                                   first_month, '-',
+                                   first_day, ' ',
+                                   '00:00'))
+  
+  last_DT <- max(dt)
+  last_day <- as.numeric(format(last_DT, '%d'))
+  last_month <- as.numeric(format(last_DT, '%m'))
+  last_year <- as.numeric(format(last_DT, '%Y'))
+  end_last <- as.POSIXct(paste0(last_year, '-',
+                                   last_month, '-',
+                                   last_day, ' ',
+                                   '23:59'))
   
   plt1 <-
     ggplot(mapping = aes(dt, sc)) +
-    geom_line(alpha = 0.5) +
-    geom_point() +
-    scale_x_date(date_breaks = '5 days') +
+    #geom_line(alpha = 0.5) +
+    geom_point(size = 0.25) +
+    scale_x_datetime(date_breaks = '24 hours',
+                     limits = c(start_first, end_last)) +
     theme_cbep(base_size = 9) +
     theme(axis.text.x = element_blank(),
           axis.text.y = element_text(angle = 90, hjust = 0.5)) +
@@ -322,22 +313,21 @@ time_plot <- function(.data, .dt, .sc, .tmax, .tmin, .precip, .snow, .dpth,
     ylab(expression('Specific Conductance (' * mu * S/cm *')')) +
     ggtitle(.title)
   
-  plt2 <- focus_data %>%
-    ggplot( aes(dt, dpth * 100)) +
+  plt2 <- ggplot(mapping = aes(dt, dpth * 100)) +
     geom_line(alpha = 0.5, color = 'turquoise') +
     geom_point(color = 'turquoise') +
-    scale_x_date(date_breaks = '5 days') +
+    scale_x_datetime(date_breaks = '24 hours') +
     theme_cbep(base_size = 9) +
     theme(axis.text.x = element_blank()) +
     xlab('') +
     ylab('Depth (cm)')
-  
-  tmp <- tibble(dt = dt, tmax = tmax, tmin = tmin)%>%
-    pivot_longer(-c(dt), names_to = 'which', values_to = 'temp')  %>%
+
+  tmp <- tibble(dy = dy, tmax = tmax, tmin = tmin)%>%
+    pivot_longer(-dy, names_to = 'which', values_to = 'temp')  %>%
     mutate(which = factor(which, levels = c('tmax', 'tmin'), 
                           labels = c('Max', 'Min')))
   
-  plt3 <- ggplot(tmp, aes(dt, temp, color = which)) +
+  plt3 <- ggplot(tmp, aes(dy, temp, color = which)) +
     geom_line(alpha = 0.5) +
     geom_hline(yintercept = 0, lty = 3) +
     scale_x_date(date_breaks = '5 days') +
@@ -348,7 +338,7 @@ time_plot <- function(.data, .dt, .sc, .tmax, .tmin, .precip, .snow, .dpth,
     xlab('') +
     ylab('Temp. (C)')
   
-  plt4 <-  ggplot(mapping = aes(dt, precip)) +
+  plt4 <- ggplot(mapping = aes(dy, precip)) +
     geom_col(alpha = 0.5, fill = 'blue2', color = 'blue2') +
     scale_x_date(date_breaks = '5 days') +
     theme_cbep(base_size = 9) +
@@ -356,14 +346,14 @@ time_plot <- function(.data, .dt, .sc, .tmax, .tmin, .precip, .snow, .dpth,
     xlab('') +
     ylab('Precip. (mm)')
   
-  plt5 <- ggplot(mapping =  aes(dt, snow / 10)) +
+  plt5 <- ggplot(mapping = aes(dy, snow / 10)) +
     geom_col(alpha = 0.5, fill = 'white', color = 'black') +
-    scale_x_date(date_breaks = '5 days') +
+    #scale_x_date(date_breaks = '5 days') +
     scale_y_continuous(n.breaks = 3) +
     theme_cbep(base_size = 9) +
     xlab('Date') +
     ylab('Snow (cm)')
-  
+
   grid.arrange(plt1, plt2,  plt3, plt4, plt5, nrow = 5, heights = c(3,1,1,1,1))
 }
 
@@ -371,104 +361,138 @@ time_plot <- function(.data, .dt, .sc, .tmax, .tmin, .precip, .snow, .dpth,
 
 # 2011 Conductivity Peak
 ## 2011 Storm at Site S07
-```{r plot_site_S07_2011, fig.width = 5, fig.height = 6, echo = FALSE}
+```{r plot_site_S07_2011_dots, fig.width = 5, fig.height = 6, echo = FALSE}
 focus_data <- s07_data %>%
   filter(Year == 2011 & DOY < 70) %>%
-  select(sdate, DOY, SpCond_Median, D_Median, PRCP, SNOW, TMIN, TMAX) %>%
-  rename(SpCond = SpCond_Median,
-         Depth = D_Median)
+  select(sdatetime, DOY, SpCond, Depth)
 
+first_DOY <- min(focus_data$DOY)
 
-plt <- time_plot(focus_data, sdate, SpCond, TMAX, TMIN, PRCP, SNOW, Depth,
+focus_weather <- weather_data %>%
+  filter(Year == 2011 & DOY >= first_DOY & DOY < 70 )
+
+plt <- time_plot_2(focus_data, sdatetime, SpCond, Depth,
+                   focus_weather, sdate, TMAX, TMIN, PRCP, SNOW, 
                       .title = '2011 Storm at Site S07') 
-ggsave('figures/site_s07_2011.pdf', plot = plt,
+ggsave('figures/site_s07_2011_dots.pdf', plot = plt,
        device = cairo_pdf, width = 5, height = 6)
 
 ```
 
-Conductivity starts out high, but climbs further for several days **after** a
+Conductivity starts out high, but climbs rapidly on the day **after** a
 major winter storm that dumped more than 9 inches of snow at the Jetport. What
 appears to be a warmer winter storm occurs on the 27th and 28th.  The storm
-appears to  shift from mostly snow on 2/27 to mostly rain on 2/28.  Water levels
-in Blanchette Brook climb on the 29th, and conductivity in the stream drops
-quickly for a few days, but then levels off again.  A major rainstorm in early 
-March drops more than 2 inches of rain, which leads to another increase in water 
-depth, and a rapid drop in conductivity.
+appears to shift from mostly snow on 2/27 to mostly rain on 2/28.  Water levels
+in Blanchette Brook climb on the 28th, and conductivity in the stream skyockets,
+but also drops quickly, then tapers  gradually for a few days.  A major rain 
+on 3/05 through 3/07 drops more than 2 inches of rain, which leads to another 
+increase in water depth, and a rapid drop in conductivity.
+
+The major spikes in conductivity (two, three, or five spikes) all last less than 
+24 hours.  Spikes develop rapidly, and then exhibit something like an
+exponential fall-off in conductivity.
 
 ## 2011 Storm at Site S03
 Depth data is unavailable from Site S03 for the period of these storms.
-```{r plot_site_S03_2011, fig.width = 5, fig.height = 6, echo = FALSE}
+```{r plot_site_S03_2011_dots, fig.width = 5, fig.height = 6, echo = FALSE}
 focus_data <- s03_data %>%
   filter(Year == 2011 & DOY < 70) %>%
-  select(sdate, DOY, SpCond_Median, D_Median, PRCP, SNOW, TMIN, TMAX) %>%
-  rename(SpCond = SpCond_Median,
-         Depth = D_Median)
+  select(sdatetime, DOY, SpCond, Depth)
 
-plt <- time_plot(focus_data, sdate, SpCond, TMAX, TMIN, PRCP, SNOW, Depth,
+first_DOY <- min(focus_data$DOY)
+
+focus_weather <- weather_data %>%
+  filter(Year == 2011 & DOY >= first_DOY & DOY < 70 )
+
+plt <- time_plot_2(focus_data, sdatetime, SpCond, Depth,
+                   focus_weather, sdate, TMAX, TMIN, PRCP, SNOW, 
                       .title = '2011 Storm at Site S03') 
-ggsave('figures/site_s03_2011.pdf', plot = plt, device = cairo_pdf, width = 5, height = 6)
+ggsave('figures/site_s03_2011_dots.pdf', plot = plt,
+       device = cairo_pdf, width = 5, height = 6)
+
 ```
-While specific conductance at S03 is nearly double what we saw at S07, the
-temporal pattern is similar. Without local depth data, we can not interpret
-these data with  much authority, but it is likely that similar processes are at
-work.
+While specific conductance at S03 is several times what we saw at S07, the
+temporal pattern is similar, but with more short-term spikes in conductivity. 
+The spikes in conductivity appear to be diurnal, occurring over night or in the
+early morning.  Perhaps that corresponds to overnight salt applications?
+
+WE again see a dilution effect after the major rains on March 6 and 7.
 
 ## 2011 Storm at Site S01
 Depth data is unavailable from Site S03 for the period of these storms.
-```{r plot_site_S01_2011, fig.width = 5, fig.height = 6, echo = FALSE}
+```{r plot_site_S01_2011_dots, fig.width = 5, fig.height = 6, echo = FALSE}
 focus_data <- s01_data %>%
   filter(Year == 2011 & DOY < 70) %>%
-  select(sdate, DOY, SpCond_Median, D_Median, PRCP, SNOW, TMIN, TMAX) %>%
-  rename(SpCond = SpCond_Median,
-         Depth = D_Median)
+  select(sdatetime, DOY, SpCond, Depth)
 
-plt <- time_plot(focus_data, sdate, SpCond, TMAX, TMIN, PRCP, SNOW, Depth,
+first_DOY <- min(focus_data$DOY)
+
+focus_weather <- weather_data %>%
+  filter(Year == 2011 & DOY >= first_DOY & DOY < 70 )
+
+plt <- time_plot_2(focus_data, sdatetime, SpCond, Depth,
+                   focus_weather, sdate, TMAX, TMIN, PRCP, SNOW, 
                       .title = '2011 Storm at Site S01') 
-ggsave('figures/site_s01_2011.pdf', plot = plt, 
+ggsave('figures/site_s01_2011_dots.pdf', plot = plt,
        device = cairo_pdf, width = 5, height = 6)
+
 ```
 
 Again, we lack water depth data from this site, but the overall pattern is 
-similar.
+similar.  We see only a small jump in conductivity associated with the storm
+on 2/25, but a much larger jump on 2/26 in the early morning, and another spike 
+on 2/18, which appears to lead to gradual systemic increase in conductivity for 
+several days. 
+
+My interpretation is that we are seeing rapid runoff to the stream 
+immediately following night-time application of salt on the Maine Mall parking 
+lots, followed by a more gradual increase that reflects recent cummulative 
+applications and dilution by rainfall.
 
 # 2017 Conductivity Peak
 ## 2017 Storms at Site S07
-```{r plot_site_S07_2017, fig.width = 5, fig.height = 6, echo = FALSE}
+```{r plot_site_S07_2017_dots, fig.width = 5, fig.height = 6, echo = FALSE}
 focus_data <- s07_data %>%
-  filter(Year == 2017 & DOY> 60 & DOY < 100) %>%
-  select(sdate, DOY, SpCond_Median, D_Median, PRCP, SNOW, TMIN, TMAX) %>%
-  rename(SpCond = SpCond_Median,
-         Depth = D_Median)
+  filter(Year == 2017 & DOY> 60 & DOY < 100) 
 
-plt <- time_plot(focus_data, sdate, SpCond, TMAX, TMIN, PRCP, SNOW, Depth,
-                      .title = '2011 Storms at Site S07') 
+focus_weather <- weather_data %>%
+  filter(Year == 2017 & DOY > 60 & DOY < 100 )
 
-ggsave('figures/site_s07_2017.pdf', plot = plt, device = cairo_pdf, width = 5, height = 6)
+plt <- time_plot_2(focus_data, sdatetime, SpCond, Depth,
+                   focus_weather, sdate, TMAX, TMIN, PRCP, SNOW, 
+                      .title = '2017 Storm at Site S07') 
+ggsave('figures/site_s07_2017_dots.pdf', plot = plt,
+       device = cairo_pdf, width = 5, height = 6)
+
 ```
+  
 
 The record starts with specific conductance rising rapidly, while water depth in
 Blanchette Brook is dropping, perhaps following a relatively small rain event a
 few days prior to the beginning of the record shown here. A light rain event
 that persisted for several days under relatively warm conditions causes stream 
-flow to jump, and conductivity to fall.  Colder weather,a minor snowfall on 3/10
-and a large snow event on 3/14 preceded a rapid climb in conductivity.
-Conductivity stayed relatively high for over a week. A second spike in
-conductivity follows a (very) minor snow event around 03/24. A large (about 3/4
-inch) rain event on 3/27 leads to a jump in water depth in the stream, and
-a rapid decline in conductivity.
+flow to jump, and conductivity to fall.  A short-term spike in conductivity 
+occurs just before a minor snowfall on 3/10, but not before the major snowfall 
+on 3/14.  After that large storm, however, conductivity climbs steadily for
+about a week. The peak in conductivity occurs as air temperatures rise above
+freezing on 3/20. Values hold steady then decline after rain, but spike
+again before a snow storm on April 1.
+
 
 ## 2017 Storms at Site S05
-```{r plot_site_S05_2017, fig.width = 5, fig.height = 6, echo = FALSE}
+```{r plot_site_S05_2017_dots, fig.width = 5, fig.height = 6, echo = FALSE}
 focus_data <- s05_data %>%
-  filter(Year == 2017 & DOY> 60 & DOY < 100) %>%
-  select(sdate, DOY, SpCond_Median, D_Median, PRCP, SNOW, TMIN, TMAX) %>%
-  rename(SpCond = SpCond_Median,
-         Depth = D_Median)
+  filter(Year == 2017 & DOY> 60 & DOY < 100) 
 
-plt <- time_plot(focus_data, sdate, SpCond, TMAX, TMIN, PRCP, SNOW, Depth,
-                      .title = '2017 Storms at Site S05') 
-ggsave('figures/site_s05_2017.pdf', plot = plt,
+focus_weather <- weather_data %>%
+  filter(Year == 2017 & DOY > 60 & DOY < 100 )
+
+plt <- time_plot_2(focus_data, sdatetime, SpCond, Depth,
+                   focus_weather, sdate, TMAX, TMIN, PRCP, SNOW, 
+                      .title = '2017 Storm at Site S05') 
+ggsave('figures/site_s05_2017_dots.pdf', plot = plt,
        device = cairo_pdf, width = 5, height = 6)
+
 ```
 
 The overall pattern at site S05 looks similar to what we observed at Site
@@ -477,40 +501,45 @@ Site S05. Conductivity in Long Creek climbs after snow events, and drops after
 rain events that are significant enough to cause an increase in water depth in 
 the stream.
 
-## 2017 Storms at Site S03
-```{r plot_site_S03_2017, fig.width = 5, fig.height = 6, echo = FALSE}
-focus_data <- s03_data %>%
-  filter(Year == 2017 & DOY> 60 & DOY < 100) %>%
-  select(sdate, DOY, SpCond_Median, D_Median, PRCP, SNOW, TMIN, TMAX) %>%
-  rename(SpCond = SpCond_Median,
-         Depth = D_Median)
+Here we do not see the marked spikes in conductivity that may indicate local
+sources of salt preceeding storms.
 
-plt <- time_plot(focus_data, sdate, SpCond, TMAX, TMIN, PRCP, SNOW, Depth,
-                      .title = '2017 Storms at Site S03') 
-ggsave('figures/site_s03_2017.pdf', plot = plt, device = cairo_pdf, width = 5, height = 6)
+## 2017 Storms at Site S03
+```{r plot_site_S03_2017_dots, fig.width = 5, fig.height = 6, echo = FALSE}
+focus_data <- s03_data %>%
+  filter(Year == 2017 & DOY> 60 & DOY < 100) 
+
+focus_weather <- weather_data %>%
+  filter(Year == 2017 & DOY > 60 & DOY < 100 )
+
+plt <- time_plot_2(focus_data, sdatetime, SpCond, Depth,
+                   focus_weather, sdate, TMAX, TMIN, PRCP, SNOW, 
+                      .title = '2017 Storm at Site S03') 
+ggsave('figures/site_s03_2017_dots.pdf', plot = plt,
+       device = cairo_pdf, width = 5, height = 6)
+
 ```
 
 The pattern is a bit less clear at Site S03, especially following smaller 
-storm events.  The rainfall on 3/06 and 3/07 leads to an increase in water depth,
-but also an increase in conductivity. Conductivity then gradually declines over 
-a period of days, until the major storm on 3/14, which appears to lead to 
-increasing conductivity for a period of days. There is a one-day increase 
-immediately after the small snow storm on 3/24, and then the rainfall on 
-3/27 and 3/28 increases stream flow, and lowers conductivity.
+storm events.  COnductivity climbs for over a week after the large storm on 
+3/14.  The sharpest spikes appear to coincide with warmer days, perhaps 
+indicating snow melt events. Deeper water is associated with lower condcctivity.
 
 
 ## 2017 Storms at Site S01
-```{r plot_site_S01_2017, fig.width = 5, fig.height = 6, echo = FALSE}
+```{r plot_site_S01_2017_dots, fig.width = 5, fig.height = 6, echo = FALSE}
 focus_data <- s01_data %>%
-  filter(Year == 2017 & DOY> 60 & DOY < 100) %>%
-  select(sdate, DOY, SpCond_Median, D_Median, PRCP, SNOW, TMIN, TMAX) %>%
-  rename(SpCond = SpCond_Median,
-         Depth = D_Median)
+  filter(Year == 2017 & DOY> 60 & DOY < 100) 
 
-plt <- time_plot(focus_data, sdate, SpCond, TMAX, TMIN, PRCP, SNOW, Depth,
-                      .title = '2017 Storms at Site S01') 
-ggsave('figures/site_s01_2017.pdf', plot = plt, 
+focus_weather <- weather_data %>%
+  filter(Year == 2017 & DOY > 60 & DOY < 100 )
+
+plt <- time_plot_2(focus_data, sdatetime, SpCond, Depth,
+                   focus_weather, sdate, TMAX, TMIN, PRCP, SNOW, 
+                      .title = '2017 Storm at Site S01') 
+ggsave('figures/site_s01_2017_dots.pdf', plot = plt,
        device = cairo_pdf, width = 5, height = 6)
+
 ```
 
 We lack water depth data for this site in 2017. 
@@ -519,8 +548,7 @@ Rapidly climbing conductivity at the start of this period may be following a
 minor rain event on 3/01 or warm daytime temperatures. The drop in Conductivity
 on 3/05 and 3/06 does not correspond to any storm event.  The (warm)
 precipitation on 3/07 and 3/08 occurs simultaneously with a spike in
-conductivity, followed by a rapid drop.  Recovery to lower conductivity 3/10 to
-3/17 appears to mirror temperatures, and occurs despite a snowstorm on 3/14.
+conductivity, followed by a rapid drop.
 
 The snow storm on 3/14 precedes a climb in specific conductance (moderate
 compared to what was observed at the other sites) by several days. The
