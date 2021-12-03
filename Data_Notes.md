@@ -7,7 +7,7 @@
   
 All data was sourced from the "Data" folder from the "LCWMD_Monitoring"
 GitHub archive from the 2020 State of Casco Bay Report 
-(https://github.com/CBEP-SoCB/LCWMD_Monitoring).  Additional metadata on the
+(https://github.com/CBEP-SoCB/LCWMD_Monitoring_sum).  Additional metadata on the
 contents of these files is available there.
 
 ## Data Files in This Folder
